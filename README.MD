@@ -1,20 +1,31 @@
-##前言
-这几天因为涉及到jni的开发，就对linux稍微有了一点点的了解。刚好很久没有写博客，干脆就简单实现下Android的su提权，权当复习了。
+## 前言
+这几天因为涉及到jni的开发，就对linux稍微有了一点点的了解。刚好很久没有写博客，干脆就简单实现下Android的su提权， 权当复习了。
 
-##知识点
+
+## 知识点
 * su daemon守护进程(server)的创建
 * su被调用时client与server的通信
 * client身份的认证与授权
 * server运行client端命令
-##背景知识
-android本质上还是基于linux开发的操作系统。在linux下，当需要提权时，可以很方便地通过 ` sudo ` 或 `su` 提权，进而完成高权限操作。然而在android中，每个用户能做什么不能做什么已经在代码中写死了，默认没有`root`用户的存在，直接调用`su`肯定不行。然而在日常的开发中，有时又需要一些高权限操作，这时我们通常采取的方案是在第三方`recovery`下刷入`SuperSU` 包或者 `Magisk` 包这样的第三方`root`方案。
 
-这些方案的核心操作都是在 `$PATH` 环境变量(通常是`/system/bin:/system/xbin:/sbin:/vendor/bin:/vendor/xbin`)下放置一个`su`的可执行文件，当有程序调用`su`时，会触发权限申请操作，用户手动授权才会授予`root`权限。
+## 背景知识
+android本质上还是基于linux开发的操作系统。在linux下，当需要提权时，可以很方便地通过 ` sudo ` 或 `su` 提权，进而完成高权限操作。
+然而在android中，每个用户能做什么不能做什么已经在代码中写死了，默认没有`root`用户的存在，直接调用`su`肯定不行。
+然而在日常的开发中，有时又需要一些高权限操作，这时我们通常采取的方案是在第三方`recovery`下
+刷入`SuperSU` 包或者 `Magisk` 包这样的第三方`root`方案。
 
-如果是在linux下，只要给`su`文件以`suid`权限，实际运行时就自然是`root`身份了。然而在android中，很多分区在一开始挂载时就被设置为`no suid`，因此这个方案自然行不通。如果直接观察 `su` 文件的权限，也是正常的`0755`权限，根本就没有`suid`位
-![su文件权限图](https://upload-images.jianshu.io/upload_images/12199876-36262c3d1284883d.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+这些方案的核心操作都是在 `$PATH` 环境变量(通常是`/system/bin:/system/xbin:/sbin:/vendor/bin:/vendor/xbin`)
+下放置一个`su`的可执行文件，当有程序调用`su`时，会触发权限申请操作，用户手动授权才会授予`root`权限。
 
-所以一个可行的方案是，在设备启动时由`init`进程开启一个`su daemon` 守护进程，当有程序调用`su`时，就作为`client`与这个`server`通信，由远程的`server`完成所有操作。由于`init`进程具有天然的`root`权限，由它 fork 出的`su daemon`自然也是`root`身份，这就实现了提权。
+如果是在linux下，只要给`su`文件以`suid`权限，实际运行时就自然是`root`身份了。然而在android中，很多分区在一开始挂载时就被设置为`no suid`，
+因此这个方案自然行不通。如果直接观察 `su` 文件的权限，也是正常的`0755`权限，根本就没有`suid`位
+
+![su文件权限图](image/12199876-36262c3d1284883d.png)
+
+所以一个可行的方案是，在设备启动时由`init`进程开启一个`su daemon` 守护进程，当有程序调用`su`时，
+就作为`client`与这个`server`通信，由远程的`server`完成所有操作。
+由于`init`进程具有天然的`root`权限，由它 fork 出的`su daemon`自然也是`root`身份，这就实现了提权。
+
 
 ## su daemon守护进程(server)的创建
 由上述分析可知，守护进程应该由一个具有`root`身份的进程创建。在我的设备上，`/system/etc/init/superuser.rc`就是这个作用。我们来看一下它的内容
@@ -25,8 +36,12 @@ service su_daemon /system/xbin/su --daemon
     disabled 
     seclabel u:r:sudaemon:s0
 ```
-所以在我们自己的`su`文件中，也可以判断`--daemon`这个参数，完成服务端的创建。服务端负责阻塞并接收客户端发来的`su`请求。当成功接收时，就会`fork`出一个新的进程来完成请求。这是一个典型的跨进程通信(IPC)实例。这里使用socket通信。关于socket，网上已经有很多文章了，因此不再赘述。
-```
+
+所以在我们自己的`su`文件中，也可以判断`--daemon`这个参数，完成服务端的创建。服务端负责阻塞并接收客户端发来的`su`请求。
+当成功接收时，就会`fork`出一个新的进程来完成请求。这是一个典型的跨进程通信(IPC)实例。这里使用socket通信。
+关于socket，网上已经有很多文章了，因此不再赘述。
+
+```C
 int start_daemon();
 int handle_client_socket(int server, int client);
 void exec_su_args(struct ucred* cred, struct su_args* args);
@@ -95,11 +110,15 @@ bail:
     return -1;
 }
 ```
-需要说明的是，在接收客户端请求的 `accept` 函数处，应该设置一个死循环，这样才能一直接收新的请求。这里只是为了原理性验证，因此接收一个请求就退出。
 
-##su被调用时client与server的通信
-既然通信方式已经确定，那么接下来就是通信内容，如要执行的命令，uid，以及当前环境变量与工作目录等。我把这部分封装到一个`su_args`结构体中。client端在连接到server后，把`su_args`发送过去，自身陷入阻塞状态，等待server的返回值。
-```
+需要说明的是，在接收客户端请求的 `accept` 函数处，应该设置一个死循环，这样才能一直接收新的请求。
+这里只是为了原理性验证，因此接收一个请求就退出。
+
+## su被调用时client与server的通信
+既然通信方式已经确定，那么接下来就是通信内容，如要执行的命令，uid，以及当前环境变量与工作目录等。
+我把这部分封装到一个`su_args`结构体中。client端在连接到server后，把`su_args`发送过去，自身陷入阻塞状态，等待server的返回值。
+
+```C
 struct su_args {
     uid_t uid;
     int argc;
@@ -181,23 +200,32 @@ bail:
     return -1;
 }
 ```
-##client身份的认证与授权
-为了安全起见，服务端必须要能知道客户端的身份，即：uid，gid，pid等。这里就有两种选择了，一种是让client通过socket发过来，一个是通过`getsockopt`函数。因为前种方式易被伪造，故选择后者。 
+
+## client身份的认证与授权
+为了安全起见，服务端必须要能知道客户端的身份，即：uid，gid，pid等。这里就有两种选择了，一种是让client通过socket发过来，
+一个是通过`getsockopt`函数。因为前种方式易被伪造，故选择后者。
+
 ```
     struct ucred cred;
     socklen_t len = sizeof(cred);
     getsockopt(client_fd, SOL_SOCKET, SO_PEERCRED, &cred, &len);
 ```
+
 * 注意：这里需要提前 `#define _GNU_SOURCE`，否则会提示找不到`struct ucred` 
 
-在获取客户端的身份之后，就需要判断是否要授权了。superuser的实现维护了一个sqlite3的数据库，里面保存着所有的“白名单”与“黑名单”应用。如果发现数据库中没有对应app的记录时，才会通过对话框的方式，请求用户的授权。
+在获取客户端的身份之后，就需要判断是否要授权了。superuser的实现维护了一个sqlite3的数据库，
+里面保存着所有的“白名单”与“黑名单”应用。如果发现数据库中没有对应app的记录时，才会通过对话框的方式，请求用户的授权。
 
-su daemon与android app(superuser) 处在两个完全不同的运行环境里，一个是传统的linux进程，一个运行在java虚拟机上，那么二者是怎么通信的呢？
+su daemon与android app(superuser) 处在两个完全不同的运行环境里，一个是传统的linux进程，一个运行在java虚拟机上，
+那么二者是怎么通信的呢？
 
-答案是`am`命令。`am`是android内置的一个命令，可以实现在命令行环境下启动activity，service，发送广播等，使用十分广泛。不了解的可以自行上网搜索，这里不再赘述了。
+答案是`am`命令。`am`是android内置的一个命令，可以实现在命令行环境下启动activity，service，发送广播等，使用十分广泛。
+不了解的可以自行上网搜索，这里不再赘述了。
 
-既然能够唤起android app，那么就要想办法接收数据返回。这里是创建了一个临时的socket来接收数据。下面的代码在创建socket后倒计时20秒，如果因为各种各样的原因无法读到数据，那么直接拒绝。
-```
+既然能够唤起android app，那么就要想办法接收数据返回。这里是创建了一个临时的socket来接收数据。
+下面的代码在创建socket后倒计时20秒，如果因为各种各样的原因无法读到数据，那么直接拒绝。
+
+```C
 #define SUPERUSER_PACKAGE_NAME      "cn.nlifew.superuser"
 #define SUPERUSER_REQUEST_ACTIVITY  ".ui.RequestActivity"
 
@@ -276,11 +304,11 @@ bail:
     return status;
 }
 ```
+
 在app端，我们可以通过解析参数，弹出一个对话框来请求操作，然后把结果写回到socket。
 
 所以认证client的全部过程
-```
-
+```C
 int handle_client_socket(int server_fd, int client_fd)
 {
     int status = -1;
@@ -346,29 +374,19 @@ bail:
     return status;
 }
 ```
-##server运行client端命令
-这一部分实际上是server先fork出一个子进程，并委托子进程执行exec函数完成的。父进程一直等待子进程的结束，并通过socket返回给客户端。这个过程需要接管client端的stdio设备。
-```
+
+## server运行client端命令
+这一部分实际上是server先fork出一个子进程，并委托子进程执行exec函数完成的。
+父进程一直等待子进程的结束，并通过socket返回给客户端。这个过程需要接管client端的stdio设备。
+
+```C
 void exec_su_args(struct ucred* cred, struct su_args* args)
 {
     int status = -1;
 
     LOGD("convert args\n");
-
-    char** argv = (char**) malloc(sizeof(char*)*(args->argc + 1));
-    if (argv == NULL) {
-        LOGE("failed to malloc memery %lu bytes\n", sizeof(char*)*(args->argc + 1));
-        goto bail;
-    }
-    char* tmp = args->args;
-    for (int i = 0; i < args->argc; i++) {
-        argv[i] = tmp;
-        tmp = strchr(tmp, ' ');
-        *(tmp++) = '\0';
-    }
-    argv[args->argc] = NULL;
-
-
+    char** argv = split_cmd_line(args->args);
+ 
     LOGD("open remote stdio");
 
     char buff[64];
@@ -406,10 +424,14 @@ bail:
     exit(status);
 }
 ```
-##运行效果截图
-![终端截图](https://upload-images.jianshu.io/upload_images/12199876-637a21fd0a755931.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
-![app端截图](https://upload-images.jianshu.io/upload_images/12199876-36e339250257ebb7.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
-##注意事项
+
+## 运行效果截图
+![daemon端截图](image/833477d49abcd83ffc956a82e0864894.jpg)
+![client端截图](image/3af045fd448e0bf3cdb6d1fc2ee7a097.png)
+![app端截图](image/1dbf269628518bbb49140360b3e4686c.png)
+![app端截图](image/9ce145431b608c381e39ab7941eb4818.png)
+
+## 注意事项
 上面所述只是一个非常简单的实现，比如setsid会话组，android多用户，signal信号的处理等，这里都省略掉了。处理之外还有
 * server的accept部分，应包裹在一个死循环中，这样才能一直接受请求
 * superuser中有查询sqlite数据库的部分，这里省略了

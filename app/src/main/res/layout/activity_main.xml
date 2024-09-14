@@ -6,15 +6,8 @@
     android:layout_height="match_parent"
     tools:context="cn.nlifew.superuser.ui.MainActivity">
 
-    <TextView
-        android:padding="100dp"
-        android:gravity="top|center_horizontal"
-        android:id="@+id/activity_main_info"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"/>
-
     <Button
-        android:text="su"
+        android:text="点击执行 su 文件"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"

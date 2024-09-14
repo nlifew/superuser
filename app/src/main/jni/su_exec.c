@@ -1,20 +1,12 @@
 
-#ifndef _su_client_h_
-#define _su_client_h_
-
 #include <unistd.h>
-#include <fcntl.h>
-#include <string.h>
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-
-#include "utils/log.h"
 #include "su.h"
+#include "log.h"
+#include "socket.h"
 
 
-int handle_server_socket(int fd, struct su_args* args)
+static int handle_server_socket(int fd, struct su_args* args)
 {
     int status = -1;
     int bytes;
@@ -23,7 +15,7 @@ int handle_server_socket(int fd, struct su_args* args)
 
     if ((bytes = write(fd, args, sizeof(*args))) != sizeof(*args)) {
         LOGE("failed to send su_args struct\n"
-            "expected %d bytes, actually %d bytes\n", (int) sizeof(*args), bytes);
+             "expected %d bytes, actually %d bytes\n", (int) sizeof(*args), bytes);
         goto bail;
     }
 
@@ -36,12 +28,10 @@ int handle_server_socket(int fd, struct su_args* args)
 
     LOGD("exit code %d\n", status);
 bail:
-
-    return status; 
+    return status;
 }
 
-int start_client(struct su_args* args)
-{
+int exec_su(struct su_args *args) {
     int fd = -1;
     int status = -1;
 
@@ -63,5 +53,3 @@ bail:
     if (fd != -1) close(fd);
     return status;
 }
-
-#endif /* _su_client_h_ */

@@ -2,34 +2,24 @@
 // Created by Nlifew on 2019/7/28.
 //
 
-#ifndef SUPERUSER_SU_H
-#define SUPERUSER_SU_H
+#ifndef SUPERUSER_SU_DAEMON_H
+#define SUPERUSER_SU_DAEMON_H
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
+#include <sys/socket.h> // struct ucred
 
-#include "log.h"
+#define LOCAL_SOCKET_PATH   "/dev/su.d"
 
-int open_local_client(const char* path, struct sockaddr_un* addr)
-{
-    int fd = socket(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC, 0);
+struct su_args {
+    uid_t uid;
+    int argc;
+    char args[256];
+};
 
-    if (fd == -1) {
-        LOGE("failed when creating socket\n");
-        goto bail;
-    }
+int start_daemon();
+int exec_su(struct su_args *args);
 
-    addr->sun_family = AF_UNIX;
-    strcpy(addr->sun_path, path);
-
-    LOGD("all things is done, return\n");
-    return fd;
-bail:
-    if (fd != -1) close(fd);
-    return -1;
-}
-
-#endif //SUPERUSER_SU_H
+#endif //SUPERUSER_SU_DAEMON_H

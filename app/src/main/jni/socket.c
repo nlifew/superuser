@@ -1,33 +1,21 @@
 
-#ifndef _su_main_h_
-#define _su_main_h_
-
-#include <unistd.h>
 #include <string.h>
-
+#include <unistd.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/types.h>
 
-#include "utils/log.h"
-
-struct su_args {
-    uid_t uid;
-    int argc;
-    char args[256];
-};
-
+#include "log.h"
+#include "socket.h"
 
 int open_local_server(const char* path, struct sockaddr_un* addr, int block)
 {
     int fd = -1;
 
-    if (access(path, F_OK) == 0 && unlink(path)) {
-        LOGE("can\'t remove existed unix socket channel: %s\n", path);
+    if (access(path, F_OK) == 0 && unlink(path) != 0) {
+        LOGE("can't remove existed unix socket channel: %s\n", path);
         goto bail;
     }
-    
+
     if ((fd = socket(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC, 0)) == -1) {
         LOGE("failed when creating socket\n");
         goto bail;
@@ -74,5 +62,3 @@ bail:
     if (fd != -1) close(fd);
     return -1;
 }
-
-#endif

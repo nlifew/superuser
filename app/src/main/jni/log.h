@@ -7,15 +7,26 @@
 
 #include <string.h>
 #include <errno.h>
+
+#if NO_ANDROID_LOG
+
+#include <stdio.h>
+
+#define LOGI(fmt, ...)  fprintf(stderr, fmt, ##__VA_ARGS__)
+#define LOGD(fmt, ...)  fprintf(stderr, fmt, ##__VA_ARGS__)
+#define LOGE(fmt, ...)  fprintf(stderr, fmt "errno=%d(%s)", ##__VA_ARGS__, errno, strerror(errno))
+
+#else
+
 #include <android/log.h>
+#define LOG_TAG "superuser"
 
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "log", __VA_ARGS__)
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "log", __VA_ARGS__)
+#define LOGI(fmt, ...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, fmt, ##__VA_ARGS__)
+#define LOGD(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, fmt, ##__VA_ARGS__)
+#define LOGE(fmt, ...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, fmt "errno=%d(%s)", ##__VA_ARGS__, errno, strerror(errno))
 
-#define LOGE(...) { \
-__android_log_print(ANDROID_LOG_ERROR, "log", __VA_ARGS__); \
-__android_log_print(ANDROID_LOG_ERROR, "errno: %s(%d)", strerror(errno), errno); \
-}
+
+#endif
 
 
 #endif //SUPERUSER_LOG_H

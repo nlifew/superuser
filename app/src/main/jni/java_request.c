@@ -4,8 +4,11 @@
 
 
 #include <jni.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include "log.h"
-#include "su.h"
+#include "socket.h"
 
 JNIEXPORT void JNICALL
 Java_cn_nlifew_superuser_ui_RequestActivity_replySocketResult
